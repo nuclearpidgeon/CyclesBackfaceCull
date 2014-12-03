@@ -1,0 +1,111 @@
+import bpy
+
+def print_links(node_id):
+    mat = bpy.data.materials[node_id]
+    if verify(mat):
+        print("valid")
+    else:
+        print("invalid")
+    print("Link data for material #"+str(node_id)+":")
+    print(mat.name)
+    for link in mat.node_tree.links:
+        print("    Link from \""+link.from_node.name+"\"'s "+link.from_socket.name+
+              " to \""+link.to_node.name+"\"'s "+link.to_socket.name)
+
+def verify(mat):
+    valid = mat.use_nodes == True and \
+            mat.node_tree.nodes.__len__() == 4 and \
+            mat.node_tree.nodes.get("Diffuse BSDF") != None
+    return valid
+
+def process(mat):
+    print("Processing material "+mat.name+"...")
+    ### Define existing node/collection variables
+    # alias collections for easier reference
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    # find existing nodes
+    mat_out = nodes['Material Output']
+    diffuse = nodes['Diffuse BSDF']
+    texture = nodes['Image Texture.001']
+    ### Preprocessing
+    # remove diffuse shader (not needed)
+    nodes.remove(diffuse)
+    ### Create new nodes
+    # create and place required new nodes
+    emission = nodes.new('ShaderNodeEmission')
+    emission.location = 0, 300
+    lightpath = nodes.new('ShaderNodeLightPath')
+    lightpath.location = 0, 700
+    geo = nodes.new('ShaderNodeNewGeometry')
+    geo.location = 200, 700
+    trans = nodes.new('ShaderNodeBsdfTransparent')
+    trans.location = 0, 400
+    emissmix = nodes.new('ShaderNodeMixShader')
+    emissmix.name = 'Emission Mix Shader'
+    emissmix.location = 200, 400
+    backfmix = nodes.new('ShaderNodeMixShader')
+    backfmix.name = 'Backface Mix Shader'
+    backfmix.location = 400, 500
+    # move output and texture to more visually logical spots
+    mat_out.location = 600, 500
+    texture.location = -200, 250
+    ### Connect all the nodes
+    ## note: connection format is 'reversed' due to argument order:
+    ## links.new(input/destination, output/source)
+    # (1/8) 
+    # connect texture output -> emission shader input
+    links.new(emission.inputs['Color'],
+              texture.outputs['Color'])
+    # (2/8)
+    # connect emission output -> emission mix shader input 2
+    links.new(emissmix.inputs[2], 
+              emission.outputs['Emission'])
+    # (3/8)
+    # connect transparent output -> emission mix shader input 1
+    links.new(emissmix.inputs[1], 
+              trans.outputs['BSDF'])
+    # (4/8)
+    # connect camera light path -> emission mix shader fac
+    links.new(emissmix.inputs[0], 
+              lightpath.outputs['Is Camera Ray'])
+    # (5/8)
+    # connect transparent output -> backface mix input 2
+    links.new(backfmix.inputs[2], 
+              trans.outputs['BSDF'])
+    # (6/8)
+    # connect emission mix out -> backface mix input 1
+    links.new(backfmix.inputs[1], 
+              emissmix.outputs[0])
+    # (7/8)
+    # connect geometry backfacing -> backface mix fac
+    links.new(backfmix.inputs[0], 
+              geo.outputs['Backfacing'])
+    # (8/8)
+    # connect backface mix out -> material output
+    links.new(mat_out.inputs['Surface'],
+              backfmix.outputs[0])
+    ### Finished processing :)
+
+def check_and_process(mat):
+    print("\nChecking material "+mat.name)
+    if verify(mat):
+        print("Material is valid")
+        # All clear, process material
+        process(mat)
+    else:
+        print("ERROR - material is invalid")
+        
+def process_all():
+    for mat in bpy.data.materials:
+        check_and_process(mat)
+
+def process_from_index(index):
+    mat = bpy.data.materials[index]
+    check_and_process(mat)
+        
+print("---Start of script---\n")
+#process_all()
+#print_links(48)
+#process_from_index(48)
+print("\n---End of script---\n")
